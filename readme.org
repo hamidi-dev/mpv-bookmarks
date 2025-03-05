@@ -1,0 +1,112 @@
+#+AUTHOR: 
+#+DATE: 2025-03-05
+
+* MPV Bookmarks
+
+A script for MPV media player that allows you to create, manage, and navigate bookmarks within your media files.
+
+** Features
+
+- Save bookmarks with custom names
+- Jump to bookmarks with a single click
+- Rename, replace, and delete bookmarks
+- Move bookmarks within the list
+- Search through bookmarks with fuzzy search
+- Quick save and load functionality
+
+** Installation
+
+1. Place the =bookmarks.lua= file in your MPV scripts directory:
+   - Linux/macOS: =~/.config/mpv/scripts/=
+   - Windows: =%APPDATA%\mpv\scripts\=
+
+2. Create key bindings in your =input.conf= file:
+
+   #+begin_src conf
+   # Open bookmarks menu
+   b script-message bookmarker-menu
+
+   # Quick save bookmark
+   B script-message bookmarker-quick-save
+
+   # Quick load last bookmark
+   ctrl+b script-message bookmarker-quick-load
+   #+end_src
+
+** Usage
+
+*** Bookmarks Menu
+
+Press =B= to open the bookmarks menu. In the menu:
+
+| Key     | Action                                 |
+|---------+----------------------------------------|
+| q       | Close the menu                         |
+| UP/k    | Move selection up                      |
+| DOWN/j  | Move selection down                    |
+| LEFT/h  | Previous page                          |
+| RIGHT/l | Next page                              |
+| s       | Save current position as bookmark      |
+| S       | Save with custom name                  |
+| p       | Replace selected bookmark              |
+| r       | Rename selected bookmark               |
+| f       | Change bookmark's filepath             |
+| m       | Move bookmark to different position    |
+| d d     | Delete selected bookmark (press twice) |
+| ENTER   | Jump to selected bookmark              |
+| / or ,  | Search bookmarks                       |
+
+*** Search Mode
+
+When in search mode:
+
+| Key       | Action                                |
+|-----------+---------------------------------------|
+| UP/k      | Navigate to previous search result    |
+| DOWN/j    | Navigate to next search result        |
+| ENTER     | Jump to selected bookmark             |
+| ESC       | Exit search mode                      |
+
+*** Custom Naming
+
+When saving or renaming bookmarks, you can use these placeholders:
+- =%t= - Inserts the timestamp (HH:MM:SS.mmm)
+- =%p= - Inserts the position in seconds
+
+** Configuration
+
+You can modify these variables at the top of the script:
+
+#+begin_src lua
+-- Maximum number of characters for bookmark name
+local maxChar = 100
+-- Number of bookmarks to be displayed per page
+local bookmarksPerPage = 10
+-- Whether to close the Bookmarker menu after loading a bookmark
+local closeAfterLoad = true
+-- Whether to close the Bookmarker menu after replacing a bookmark
+local closeAfterReplace = true
+-- Whether to ask for confirmation to replace a bookmark
+local confirmReplace = false
+-- Whether to ask for confirmation to delete a bookmark
+local confirmDelete = false
+-- The rate (in seconds) at which the bookmarker refreshes its interface
+local rate = 1.5
+-- The filename for the bookmarks file
+local bookmarkerName = "bookmarker.json"
+-- Whether to use fuzzy search (more forgiving) or exact search
+local useFuzzySearch = true
+-- Font size for the bookmarker menu
+local fontSize = 8
+#+end_src
+
+** TODOs 
+
+- [ ] TODO implement jumplist functionality to go back and forth between bookmarks with ctrl+o and ctrl+i
+
+
+** Credits
+
+Big thanks goes to NurioHin! This script is based on [[https://github.com/NurioHin/mpv-bookmarker][mpv-bookmarker by NurioHin]].
+I have added the fuzzy search functionality and some VI keybindings.
+
