@@ -18,6 +18,12 @@ local bookmarkerName = "bookmarker.json"
 local useFuzzySearch = true
 -- Font size for the bookmarker menu
 local fontSize = 8  -- Smaller font size
+-- Whether to open bookmarks in a new mpv instance by default
+local openInNewInstance = true
+-- Number of seek attempts to ensure correct position
+local seekAttempts = 3
+-- Delay between seek attempts in seconds
+local seekDelay = 0.3
 
 -- All the "global" variables and utilities; don't touch these
 local utils = require 'mp.utils'
@@ -36,6 +42,8 @@ local isSearchMode = false
 local currentSearchResultIndex = 1
 local dd_pressed_once = false
 local dd_timer = nil
+local currentSeekAttempt = 0
+local seekTimer = nil
 
 -- // Controls \\ --
 -- List of custom controls and their function
@@ -75,7 +83,9 @@ local bookmarkerControls = {
   ENTER = function() jumpToBookmark(currentSlot) end,
   KP_ENTER = function() jumpToBookmark(currentSlot) end,
   [','] = function() mode="search" typerStart() end,
-  ['/'] = function() mode="search" typerStart() end
+  ['/'] = function() mode="search" typerStart() end,
+  t = function() toggleNewInstance() end,
+  n = function() jumpToBookmark(currentSlot, true) end
 }
 local bookmarkerFlags = {
   DOWN = {repeatable = true},
@@ -728,24 +738,89 @@ function deleteBookmark(slot)
   displayBookmarks()
 end
 
+-- Toggle between opening bookmarks in current or new instance
+function toggleNewInstance()
+  openInNewInstance = not openInNewInstance
+  local message = styleOn .. "{\\b1}Bookmark opening mode: " .. 
+                 (openInNewInstance and "{\\c&H00FFFF&}New instance" or "{\\c&H00FF00&}Current instance") .. 
+                 "{\\r}" .. styleOff
+  mp.osd_message(message, 3)
+  displayBookmarks()
+end
+
+-- Perform a reliable seek to ensure we reach the correct position
+function reliableSeek(pos)
+  currentSeekAttempt = 0
+  
+  -- Kill any existing seek timer
+  if seekTimer then
+    seekTimer:kill()
+    seekTimer = nil
+  end
+  
+  -- Function to attempt seeking
+  local function attemptSeek()
+    if currentSeekAttempt < seekAttempts then
+      mp.set_property_number("time-pos", pos)
+      currentSeekAttempt = currentSeekAttempt + 1
+      
+      -- Schedule next attempt
+      seekTimer = mp.add_timeout(seekDelay, attemptSeek)
+    end
+  end
+  
+  -- Start the first attempt
+  attemptSeek()
+end
+
 -- Jump to the specified bookmark
 -- This means loading it, reading it, and jumping to the file + position in the bookmark
-function jumpToBookmark(slot)
+-- forceNewInstance parameter can override the default setting
+function jumpToBookmark(slot, forceNewInstance)
   if bookmarkExists(slot) then
     local bookmark = bookmarks[slot]
+    local useNewInstance = forceNewInstance or openInNewInstance
+    
     if string.sub(bookmark["path"], 1, 4) == "http" or fileExists(bookmark["path"]) then
-      if parsePath(mp.get_property("path")) == bookmark["path"] then
-        mp.set_property_number("time-pos", bookmark["pos"])
+      if useNewInstance then
+        -- Open in new instance and pause current playback
+        mp.set_property_bool("pause", true)
+        
+        -- Construct command for new mpv instance with position
+        local position_arg = "--start=" .. bookmark["pos"]
+        local path = parsePath(bookmark["path"])
+        
+        -- Use different commands based on OS
+        if isWindows() then
+          mp.commandv("run", "powershell", "-command", "Start-Process", "mpv", position_arg, path, "-NoNewWindow")
+        else
+          mp.commandv("run", "mpv", position_arg, path, "&")
+        end
+        
+        if closeAfterLoad then 
+          abort(styleOn.."{\\c&H00FFFF&}{\\b1}Opened bookmark in new instance:{\\r}\n"..displayName(bookmark["name"]))
+        end
       else
-        -- Load the file first without start parameter
-        mp.commandv("loadfile", parsePath(bookmark["path"]), "replace")
-        -- After loading, seek to the exact position including decimal part
-        -- This is done via a single-use timer to ensure the file is loaded first
-        mp.add_timeout(0.1, function()
-          mp.set_property_number("time-pos", bookmark["pos"])
-        end)
+        -- Open in current instance
+        if parsePath(mp.get_property("path")) == bookmark["path"] then
+          -- Just seek if it's the same file
+          reliableSeek(bookmark["pos"])
+        else
+          -- Load the file and then seek to position after loading
+          mp.commandv("loadfile", parsePath(bookmark["path"]), "replace")
+          
+          -- Set up a reliable seek after loading
+          mp.register_event("file-loaded", function(event)
+            -- Only do this once per jump
+            mp.unregister_event(function() end)
+            reliableSeek(bookmark["pos"])
+          end)
+        end
+        
+        if closeAfterLoad then 
+          abort(styleOn.."{\\c&H00FF00&}{\\b1}Loaded bookmark:{\\r}\n"..displayName(bookmark["name"]))
+        end
       end
-      if closeAfterLoad then abort(styleOn.."{\\c&H00FF00&}{\\b1}Loaded bookmark:{\\r}\n"..displayName(bookmark["name"])) end
     else
       abort(styleOn.."{\\c&H0000FF&}{\\b1}Can't find file for bookmark:\n" .. displayName(bookmark["name"]))
     end
@@ -785,7 +860,12 @@ function displayBookmarks()
     local startSlot = getFirstSlotOnPage(currentPage)
     local endSlot = getLastSlotOnPage(currentPage)
     -- Prepare the text to display
-    display = styleOn .. "{\\b1}Bookmarks page " .. currentPage .. "/" .. maxPage .. ":{\\b0}"
+    display = styleOn .. "{\\b1}Bookmarks page " .. currentPage .. "/" .. maxPage
+    
+    -- Show current mode (new instance or current instance)
+    display = display .. " [" .. (openInNewInstance and "{\\c&H00FFFF&}New" or "{\\c&H00FF00&}Current") .. " instance{\\r}{\\b1}]"
+    
+    display = display .. ":{\\b0}"
     for i = startSlot, endSlot do
       local btext = displayName(bookmarks[i]["name"])
       local selection = ""
@@ -796,8 +876,8 @@ function displayBookmarks()
       display = display .. "\n" .. styleOn .. selection .. i .. ": " .. btext .. "{\\r}" .. styleOff
     end
   end
-  -- Add search hint at the bottom
-  display = display .. "\n" .. styleOn .. "{\\c&H808080&}Press / or , to search bookmarks{\\r}" .. styleOff
+  -- Add help text at the bottom
+  display = display .. "\n" .. styleOn .. "{\\c&H808080&}Press / or , to search | n to toggle mode | o to force new instance{\\r}" .. styleOff
   mp.osd_message(display, rate)
 end
 
@@ -942,3 +1022,4 @@ end
 mp.register_script_message("bookmarker-menu", handler)
 mp.register_script_message("bookmarker-quick-save", quickSave)
 mp.register_script_message("bookmarker-quick-load", quickLoad)
+
