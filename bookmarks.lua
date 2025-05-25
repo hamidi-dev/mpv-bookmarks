@@ -894,14 +894,17 @@ function displayBookmarks()
     -- Determine which slot is the first and last on the current page
     local startSlot = getFirstSlotOnPage(currentPage)
     local endSlot = getLastSlotOnPage(currentPage)
-    -- Prepare the text to display
-    display = styleOn .. "{\\b1}Bookmarks page " .. currentPage .. "/" .. maxPage
 
-    -- Show current mode (new instance or current instance)
-    display = display ..
-    " [" .. (openInNewInstance and "{\\c&H00FFFF&}New" or "{\\c&H00FF00&}Current") .. " instance{\\r}{\\b1}]"
+    local colourTag = openInNewInstance and "{\\c&H00FFFF&}" or "{\\c&H00FF00&}"
+    local label     = openInNewInstance and "New"             or "Current"
 
-    display = display .. ":{\\b0}"
+    display = styleOn ..
+              "{\\b1}Bookmarks page " .. currentPage .. "/" .. maxPage ..
+              " " ..
+              colourTag .. "[" .. label .. " instance]:" ..  -- << everything in colour
+              "{\\r}" ..                                      -- wipe colour / bold / size
+              styleOn .. "{\\b0}"                             -- restore your small font
+
     for i = startSlot, endSlot do
       local btext = displayName(bookmarks[i]["name"])
       local selection = ""
